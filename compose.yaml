@@ -1,0 +1,113 @@
+name: regutrack
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16-trixie
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-regutrack}
+      POSTGRES_USER: ${POSTGRES_USER:-regutrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  migrate:
+    image: pgvector/pgvector:0.8.7-pg16-trixie
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-regutrack}
+      PGUSER: ${POSTGRES_USER:-regutrack}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      REGUTRACK_DB_APP_PASSWORD: ${REGUTRACK_DB_APP_PASSWORD:?Set REGUTRACK_DB_APP_PASSWORD in .env}
+    volumes:
+      - ./db/migrations:/migrations:ro
+    command: ["psql", "-X", "-v", "ON_ERROR_STOP=1", "-f", "/migrations/001_enable_vector.sql", "-f", "/migrations/002_identity.sql", "-f", "/migrations/003_regulations.sql", "-f", "/migrations/004_intelligence.sql", "-f", "/migrations/005_comparisons.sql", "-f", "/migrations/006_gaps.sql", "-f", "/migrations/007_work.sql", "-f", "/migrations/008_evidence.sql", "-f", "/migrations/009_runtime_role.sql", "-f", "/migrations/010_notifications.sql", "-f", "/migrations/011_assistant.sql"]
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -qx PONG"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  ai:
+    build: ./services/ai
+    environment:
+      PDF_SERVICE_TOKEN: ${PDF_SERVICE_TOKEN:?Set PDF_SERVICE_TOKEN in .env}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+    ports:
+      - "127.0.0.1:${AI_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-regutrack}
+      PGUSER: regutrack_app
+      PGPASSWORD: ${REGUTRACK_DB_APP_PASSWORD:?Set REGUTRACK_DB_APP_PASSWORD in .env}
+      REDIS_URL: redis://redis:6379
+      AI_URL: http://ai:8000
+      PDF_SERVICE_TOKEN: ${PDF_SERVICE_TOKEN:?Set PDF_SERVICE_TOKEN in .env}
+      S3_ENDPOINT: http://objects:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-regutrack}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set a 64-character hexadecimal JWT_SECRET in .env}
+      SECURE_COOKIES: ${SECURE_COOKIES:-false}
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      ai:
+        condition: service_healthy
+      objects:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r => { if (!r.ok) process.exitCode = 1 }).catch(() => { process.exitCode = 1 })"]
+      interval: 3s
+      timeout: 4s
+      retries: 20
+  web:
+    build:
+      context: .
+      target: web
+    environment:
+      API_TARGET: http://api:3000
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5173}:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/api/health/ready').then(r => { if (!r.ok) process.exitCode = 1 }).catch(() => { process.exitCode = 1 })"]
+      interval: 3s
+      timeout: 4s
+      retries: 20
+  objects:
+    image: rustfs/rustfs:1.0.0
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-regutrack}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - objects_data:/data
+volumes:
+  postgres_data:
+  redis_data:
+  objects_data:

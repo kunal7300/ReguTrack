@@ -1,0 +1,51 @@
+name: ReguTrack checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  release-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - run: |
+          python -m pip install ruff -r services/ai/requirements-dev.txt
+          python -m ruff check --select E9,F63,F7,F82 services/ai
+          python -m unittest discover -s services/ai -p test_health.py
+      - name: Start isolated stack
+        shell: bash
+        run: |
+          for var in POSTGRES_PASSWORD REGUTRACK_DB_APP_PASSWORD JWT_SECRET S3_SECRET_KEY PDF_SERVICE_TOKEN; do
+            printf '%s=%s\n' "$var" "$(openssl rand -hex 32)" >> .env
+          done
+          docker compose up --build --wait
+      - name: Run integration and AI tests
+        shell: bash
+        run: |
+          docker compose cp apps/api/test/identity.integration.mjs api:/tmp/identity.integration.mjs
+          docker compose cp apps/api/test/regulatory.integration.mjs api:/tmp/regulatory.integration.mjs
+          for file in db/migrations/*.sql; do
+            docker compose cp "$file" "api:/tmp/${file##*/}"
+          done
+          export PGUSER=regutrack
+          PGPASSWORD="$(sed -n 's/^POSTGRES_PASSWORD=//p' .env)"
+          export PGPASSWORD
+          docker compose exec -T -e PGUSER -e PGPASSWORD -e IDENTITY_MIGRATION=/tmp/002_identity.sql -e REGULATIONS_MIGRATIONS=/tmp api node --test /tmp/identity.integration.mjs /tmp/regulatory.integration.mjs
+          for file in services/ai/test_*.py; do
+            if [ "${file##*/}" = test_health.py ]; then continue; fi
+            docker compose cp "$file" "ai:/tmp/${file##*/}"
+          done
+          docker compose exec -T ai python -m unittest discover -s /tmp
+      - if: always()
+        run: docker compose down --volumes
