@@ -14,7 +14,7 @@ docker compose --env-file .env.production -f compose.yaml -f compose.production.
 curl --fail --silent https://your-host.example/api/health/ready
 ```
 
-The migration container must exit with code 0. The readiness endpoint checks PostgreSQL, Redis, the AI service, and object storage. Create the first administrator with the [administrator bootstrap command](../PROJECT_GUIDE.md#create-the-first-super-admin), using the same Compose files and environment file.
+The migration container must exit with code 0. The readiness endpoint checks PostgreSQL, Redis, the AI service, and object storage. Create the first administrator with the bootstrap command in the main README, using the same Compose files and environment file.
 
 For managed services, provide a site-specific Compose override and configure independent migration-owner and application connections. Set the API's `PG_TLS=true` and `PGPORT` as needed, use a verified `rediss://` URL, and give the application role the grants in the migration files. Configure HTTPS object storage with access restricted to the regulatory and evidence buckets. Provision both buckets before starting the API when its service account lacks bucket creation rights.
 
