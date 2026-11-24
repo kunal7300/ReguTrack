@@ -1,5 +1,6 @@
 .git
 .env*
+DEMO_FOR_BHAIYA.md
 backups
 **/node_modules
 **/dist
