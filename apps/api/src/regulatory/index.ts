@@ -30,6 +30,7 @@ const publicDocument = 'd.id, d.version_id, d.filename, d.bytes, d.sha256, d.sta
 export function createRegulations(pool: Pool, options: {
   redisUrl: string; aiUrl: string; pdfToken: string;
   endpoint: string; accessKeyId: string; secretAccessKey: string; bucket: string; queueName?: string;
+  region?: string;
 }) {
   const redis = new URL(options.redisUrl);
   const connection = {
@@ -40,7 +41,7 @@ export function createRegulations(pool: Pool, options: {
   const queueName = options.queueName ?? 'regulatory-pdf';
   const queue = new Queue<{ documentId: string }>(queueName, { connection: { ...connection, enableOfflineQueue: false } });
   const store = new S3Client({
-    endpoint: options.endpoint, region: 'us-east-1', forcePathStyle: true,
+    endpoint: options.endpoint, region: options.region ?? 'us-east-1', forcePathStyle: true,
     credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
   });
   const Bucket = options.bucket;

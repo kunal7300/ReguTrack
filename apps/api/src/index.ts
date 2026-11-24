@@ -30,6 +30,7 @@ const config = z.object({
   JWT_SECRET: z.string().regex(/^[0-9a-fA-F]{64}$/),
   PDF_SERVICE_TOKEN: z.string().min(32),
   S3_ENDPOINT: z.url(),
+  S3_REGION: z.string().min(1).default('us-east-1'),
   S3_ACCESS_KEY: z.string().min(3),
   S3_SECRET_KEY: z.string().min(8),
   SECURE_COOKIES: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
@@ -54,13 +55,14 @@ const redis = new Redis(config.REDIS_URL, {
   commandTimeout: 1500,
   enableOfflineQueue: false,
 });
-const storage = new S3Client({endpoint:config.S3_ENDPOINT,region:'us-east-1',forcePathStyle:true,
+const storage = new S3Client({endpoint:config.S3_ENDPOINT,region:config.S3_REGION,forcePathStyle:true,
   maxAttempts:1,credentials:{accessKeyId:config.S3_ACCESS_KEY,secretAccessKey:config.S3_SECRET_KEY}});
 
 const aiHealth = z.object({ status: z.literal('ok'), service: z.literal('ai') });
 const regulatory = createRegulations(postgres, {
   redisUrl: config.REDIS_URL, aiUrl: config.AI_URL, pdfToken: config.PDF_SERVICE_TOKEN,
   endpoint: config.S3_ENDPOINT, accessKeyId: config.S3_ACCESS_KEY, secretAccessKey: config.S3_SECRET_KEY,
+  region: config.S3_REGION,
   bucket: 'regulatory-pdfs',
 });
 const intelligence = createIntelligence(postgres, {
@@ -94,6 +96,7 @@ const app = createApp({
   (authenticate) => {
     evidence = createEvidence(postgres, {
       endpoint:config.S3_ENDPOINT,accessKeyId:config.S3_ACCESS_KEY,secretAccessKey:config.S3_SECRET_KEY,
+      region:config.S3_REGION,
       aiUrl:config.AI_URL,token:config.PDF_SERVICE_TOKEN,
     }, authenticate);
     return Router().use(regulatory.router(authenticate), intelligence.router(authenticate),

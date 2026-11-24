@@ -36,10 +36,11 @@ function canUpload(task: {assignee_id:string;department_id:string;status:string}
 
 export function createEvidence(pool: Pool, config: {
   endpoint:string;accessKeyId:string;secretAccessKey:string;aiUrl:string;token:string;bucket?:string;
+  region?:string;
 }, authenticate: RequestHandler) {
   const api = Router();
   const Bucket = config.bucket ?? 'task-evidence';
-  const store = new S3Client({ endpoint:config.endpoint,region:'us-east-1',forcePathStyle:true,
+  const store = new S3Client({ endpoint:config.endpoint,region:config.region ?? 'us-east-1',forcePathStyle:true,
     credentials:{accessKeyId:config.accessKeyId,secretAccessKey:config.secretAccessKey} });
 
   async function ensureBucket() {
