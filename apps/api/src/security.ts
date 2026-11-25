@@ -20,6 +20,7 @@ export function releaseSecurity(redis:Pick<Redis,'eval'>, origin?:string): Reque
       if (path.startsWith('/api/health/') && response.statusCode<400) return;
       console.info(JSON.stringify({
         event:'http.request',requestId,method:request.method,status:response.statusCode,
+        failedChecks:response.locals.failedChecks,
         durationMs:Math.round(performance.now()-started),
       }));
     });

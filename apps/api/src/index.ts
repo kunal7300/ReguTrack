@@ -82,7 +82,7 @@ const app = createApp({
     const response = await fetch(new URL('/health', config.AI_URL), {
       signal: AbortSignal.timeout(1500),
     });
-    if (!response.ok) throw new Error('AI service health check failed');
+    if (!response.ok) throw Object.assign(new Error('AI service health check failed'), {status: response.status});
     aiHealth.parse(await response.json());
   },
   storage: async () => {
