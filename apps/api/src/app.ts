@@ -26,6 +26,7 @@ export function createApp(checks: Checks, identity?: Router, options?: { securit
     response.json({ status: 'ok', service: 'api' });
   });
 
+  let previousFailure = '';
   app.get('/api/health/ready', async (_request, response) => {
     const available=checkNames.filter((name)=>checks[name]);
     const results = await Promise.all(available.map(async (name): Promise<[CheckName, CheckStatus]> => {
@@ -38,6 +39,12 @@ export function createApp(checks: Checks, identity?: Router, options?: { securit
     }));
 
     const ready = results.every(([, status]) => status === 'up');
+    const failedChecks = results.filter(([, status]) => status === 'down').map(([name]) => name);
+    const failure = failedChecks.join(',');
+    if (failure && failure !== previousFailure) {
+      console.warn(JSON.stringify({ event: 'api.readiness.failed', failedChecks }));
+    }
+    previousFailure = failure;
     const body = readiness.parse({
       status: ready ? 'ready' : 'unavailable',
       checks: Object.fromEntries(results),
