@@ -56,32 +56,40 @@ async function requireSuccess(response: Response) {
   throw new ApiError(response.status, message);
 }
 
-function send(path: string, method = 'GET', body?: unknown, token?: string) {
+function send(path: string, method = 'GET', body?: unknown, token?: string, signal?: AbortSignal) {
   const headers = new Headers({ Accept: 'application/json' });
   if (body !== undefined && !(body instanceof FormData)) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
   return fetch('/api/v1' + path, {
-    method, headers, credentials: 'same-origin', cache: 'no-store',
+    method, headers, credentials: 'same-origin', cache: 'no-store', signal,
     body: body instanceof FormData ? body : body === undefined ? undefined : JSON.stringify(body),
   });
 }
 
-async function withSessionLock<T>(operation: () => Promise<T>): Promise<T> {
-  if (!navigator.locks) return operation();
-  return await navigator.locks.request('regutrack-session', operation);
+async function withSessionLock<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const signal = AbortSignal.timeout(90_000);
+  try {
+    if (!navigator.locks) return await operation(signal);
+    return await navigator.locks.request('regutrack-session', { signal }, () => operation(signal));
+  } catch (error) {
+    if (signal.aborted) throw new ApiError(408, 'The server took too long to respond. Please try again.');
+    throw error;
+  }
 }
 
 export async function login(email: string, password: string) {
-  return withSessionLock(async () => {
-    const response = await send('/auth/login', 'POST', { email, password });
+  // Complete any pending refresh before switching the account in this tab.
+  if (refreshing) await refreshing.catch(() => {});
+  return withSessionLock(async (signal) => {
+    const response = await send('/auth/login', 'POST', { email, password }, undefined, signal);
     await requireSuccess(response);
     setSession(sessionSchema.parse(await response.json()));
   });
 }
 
 export function refreshSession() {
-  refreshing ??= withSessionLock(async () => {
-    const response = await send('/auth/refresh', 'POST', {});
+  refreshing ??= withSessionLock(async (signal) => {
+    const response = await send('/auth/refresh', 'POST', {}, undefined, signal);
     if (response.status === 401) {
       setSession(null);
       return null;
@@ -95,8 +103,8 @@ export function refreshSession() {
 }
 
 export async function logout() {
-  return withSessionLock(async () => {
-    const response = await send('/auth/logout', 'POST', {});
+  return withSessionLock(async (signal) => {
+    const response = await send('/auth/logout', 'POST', {}, undefined, signal);
     await requireSuccess(response);
     setSession(null);
   });

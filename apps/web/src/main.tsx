@@ -92,16 +92,21 @@ function App() {
   }
 
   if (!session) {
+    const signInPage = path === '/' || path === '/login';
     return <main className="auth-shell">
       <div className="brand">ReguTrack</div>
-      {session === undefined ? <section className="panel">
-        {restoreError ? <><Notice>{restoreError}</Notice><button onClick={restore}>Retry</button></>
-          : <p role="status">Checking session…</p>}
-      </section> : path === '/forgot-password' ? <section className="panel">
+      {signInPage && restoreError && <section className="panel">
+        <Notice>{restoreError}</Notice><button onClick={restore}>Retry session check</button>
+      </section>}
+      {signInPage ? <Login /> : path === '/forgot-password' ? <section className="panel">
         <h1>Forgot password</h1>
         <p>Contact your ReguTrack administrator for help recovering your account.</p>
         <a className="button secondary" href="#/login">Back to sign in</a>
-      </section> : ['/', '/login'].includes(path) ? <Login /> : <AccessDenied unauthorized />}
+      </section> : session === undefined ? <section className="panel">
+        {restoreError ? <><Notice>{restoreError}</Notice><button onClick={restore}>Retry</button></>
+          : <p role="status">Checking session…</p>}
+        <a className="button secondary" href="#/login">Go to sign in</a>
+      </section> : <AccessDenied unauthorized />}
     </main>;
   }
 
